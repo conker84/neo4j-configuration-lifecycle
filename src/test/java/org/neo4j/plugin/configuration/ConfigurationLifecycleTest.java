@@ -6,6 +6,7 @@ import org.junit.Test;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
+import java.net.URISyntaxException;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -13,14 +14,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ConfigurationLifecycleTest {
 
+    private static File fromResource(String fileName) {
+        try {
+            return new File(Thread.currentThread().getContextClassLoader().getResource("test.properties").toURI());
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+    
+    private static final File FILE = fromResource("test.properties");
+    private static final int TRIGGER_PERIOD_MILLIS = 500;
+
     @Test
     public void testReloadFile() throws Exception {
         long timestamp = System.currentTimeMillis();
         String newKey = String.format("my.prop.%d", timestamp);
         String newValue = UUID.randomUUID().toString();
-        File file = new File(Thread.currentThread().getContextClassLoader().getResource("test.properties").toURI());
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(1, file.getAbsolutePath());
-        CountDownLatch countDownLatch = new CountDownLatch(2);
+        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
+        CountDownLatch countDownLatch = new CountDownLatch(3);
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_INITIALIZED, (evt, conf) -> {
+            countDownLatch.countDown();
+            int count = (int) countDownLatch.getCount();
+            switch (count) {
+                case 2:
+                    Assert.assertNull("newKey", conf.getString(newKey));
+                    break;
+            }
+        });
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
             countDownLatch.countDown();
             int count = (int) countDownLatch.getCount();
@@ -28,13 +48,11 @@ public class ConfigurationLifecycleTest {
                 case 0:
                     Assert.assertEquals(newValue, conf.getString(newKey));
                     break;
-                case 1:
-                    Assert.assertNull("Should not contain newKey:" + newKey, conf.getString(newKey));
-                    break;
             }
         });
         configurationLifecycle.start();
-        try (FileWriter fw = new FileWriter(file, true);
+        Thread.sleep(2000);
+        try (FileWriter fw = new FileWriter(FILE, true);
              BufferedWriter bw = new BufferedWriter(fw)) {
             bw.write(String.format("%s=%s", newKey, newValue));
             bw.newLine();
@@ -45,8 +63,7 @@ public class ConfigurationLifecycleTest {
 
     @Test
     public void testReloadFileAddBlankLine() throws Exception {
-        File file = new File(Thread.currentThread().getContextClassLoader().getResource("test.properties").toURI());
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(1, file.getAbsolutePath());
+        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         AtomicInteger countConfigurationChanged = new AtomicInteger();
         AtomicInteger countNone = new AtomicInteger();
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
@@ -57,7 +74,7 @@ public class ConfigurationLifecycleTest {
         });
         configurationLifecycle.start();
         Thread.sleep(2000);
-        try (FileWriter fw = new FileWriter(file, true);
+        try (FileWriter fw = new FileWriter(FILE, true);
              BufferedWriter bw = new BufferedWriter(fw)) {
             bw.write("\n\r");
             bw.newLine();
@@ -72,24 +89,28 @@ public class ConfigurationLifecycleTest {
         long timestamp = System.currentTimeMillis();
         String newKey = String.format("my.prop.%d", timestamp);
         String newValue = UUID.randomUUID().toString();
-        File file = new File(Thread.currentThread().getContextClassLoader().getResource("test.properties").toURI());
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(1, file.getAbsolutePath());
+        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         CountDownLatch countDownLatch = new CountDownLatch(2);
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_INITIALIZED, (evt, conf) -> {
+            countDownLatch.countDown();
+            int count = (int) countDownLatch.getCount();
+            switch (count) {
+                case 2:
+                    Assert.assertNull("newKey", conf.getString(newKey));
+                    break;
+            }
+        });
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
             countDownLatch.countDown();
-            System.out.println("evt = " + evt);
-            System.out.println("conf = " + conf);
             int count = (int) countDownLatch.getCount();
             switch (count) {
                 case 0:
                     Assert.assertEquals(newValue, conf.getString(newKey));
                     break;
-                case 1:
-                    Assert.assertNull("Should not contain newKey:" + newKey, conf.getString(newKey));
-                    break;
             }
         });
         configurationLifecycle.start();
+        Thread.sleep(2000);
         configurationLifecycle.setProperty(newKey, newValue);
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
@@ -97,8 +118,7 @@ public class ConfigurationLifecycleTest {
 
     @Test
     public void testSetAPIsShouldNotBeInvoked() throws Exception {
-        File file = new File(Thread.currentThread().getContextClassLoader().getResource("test.properties").toURI());
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(1, file.getAbsolutePath());
+        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         AtomicInteger countConfigurationChanged = new AtomicInteger();
         AtomicInteger countNone = new AtomicInteger();
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
