@@ -1,7 +1,10 @@
 package org.neo4j.plugin.configuration;
 
+import org.apache.commons.configuration2.ConfigurationUtils;
 import org.apache.commons.configuration2.ImmutableConfiguration;
 
+import java.util.AbstractMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.Spliterators;
@@ -37,5 +40,12 @@ public class ConfigurationLifecycleUtils {
             return isValueChanged ? EventType.PROPERTY_VALUE_CHANGED : EventType.NONE;
         }
         return EventType.CONFIGURATION_CHANGED;
+    }
+
+    public static Map<String, Object> toMap(ImmutableConfiguration config) {
+        return StreamSupport
+                .stream(Spliterators.spliteratorUnknownSize(config.getKeys(), Spliterator.SIZED), false)
+                .map(key -> new AbstractMap.SimpleEntry<>(key, config.getProperty(key)))
+                .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
     }
 }
