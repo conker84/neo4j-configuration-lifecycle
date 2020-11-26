@@ -131,6 +131,10 @@ public class ConfigurationLifecycleTest {
             countNone.incrementAndGet();
         });
         configurationLifecycle.start();
+        // `foo=bar` already exists into the property
+        // so a writing the same value fo the key
+        // should not affect the `CONFIGURATION_CHANGED`
+        // but invoking instead `NONE`
         configurationLifecycle.setProperty("foo", "bar");
         Thread.sleep(2000);
         Assert.assertEquals(0, countConfigurationChanged.get());
@@ -159,6 +163,39 @@ public class ConfigurationLifecycleTest {
         configurationLifecycle.stop();
         Thread.sleep(2000);
         configurationLifecycle.start();
+        try (FileWriter fw = new FileWriter(FILE, true);
+             BufferedWriter bw = new BufferedWriter(fw)) {
+            bw.write(String.format("%s=%s", newKey, newValue));
+            bw.newLine();
+        }
+        countDownLatch.await(30, TimeUnit.SECONDS);
+        Assert.assertEquals(0, countDownLatch.getCount());
+        configurationLifecycle.stop();
+    }
+
+    @Test
+    public void testSetPropertyReloadFile() throws Exception {
+        String newKey = String.format("my.prop.%d", System.currentTimeMillis());
+        String newValue = UUID.randomUUID().toString();
+        String otherNewKey = String.format("my.prop.%d", System.currentTimeMillis());
+        String otherNewValue = UUID.randomUUID().toString();
+        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
+        CountDownLatch countDownLatch = new CountDownLatch(2);
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
+            countDownLatch.countDown();
+            int count = (int) countDownLatch.getCount();
+            switch (count) {
+                case 0:
+                    // the configuration should include both two properties
+                    Assert.assertEquals(newValue, conf.getString(newKey));
+                    Assert.assertEquals(otherNewKey, conf.getString(otherNewKey));
+                    break;
+            }
+        });
+        configurationLifecycle.start();
+        Thread.sleep(2000);
+        configurationLifecycle.setProperty(otherNewKey, otherNewValue);
+        Thread.sleep(2000);
         try (FileWriter fw = new FileWriter(FILE, true);
              BufferedWriter bw = new BufferedWriter(fw)) {
             bw.write(String.format("%s=%s", newKey, newValue));
