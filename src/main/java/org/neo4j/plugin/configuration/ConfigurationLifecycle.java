@@ -129,18 +129,25 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public void stop() {
+        stop(false);
+    }
+
+    public void stop(boolean shutdown) {
         synchronized (lifecycleMonitor) {
             if (trigger != null) {
-                trigger.shutdown(false);
+                trigger.shutdown(shutdown);
             }
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false);
+                if (shutdown) {
+                    executorService.shutdown();
+                }
             }
         }
     }
 
     @Override
     public void close() throws Exception {
-        stop();
+        stop(true);
     }
 }
