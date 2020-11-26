@@ -1,5 +1,6 @@
 package org.neo4j.plugin.configuration;
 
+import org.apache.commons.configuration2.Configuration;
 import org.apache.commons.configuration2.ConfigurationUtils;
 import org.apache.commons.configuration2.FileBasedConfiguration;
 import org.apache.commons.configuration2.ImmutableConfiguration;
@@ -111,6 +112,11 @@ public class ConfigurationLifecycle implements AutoCloseable {
         properties.forEach(configuration::setProperty);
         invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration));
         checkAndSave(save);
+    }
+
+    public ImmutableConfiguration getConfiguration() throws ConfigurationException {
+        final Configuration configuration = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
+        return ConfigurationUtils.unmodifiableConfiguration(configuration);
     }
 
     public void addConfigurationLifecycleListener(EventType eventType, ConfigurationLifecycleListener listener) {
