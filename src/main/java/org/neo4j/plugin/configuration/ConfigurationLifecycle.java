@@ -5,11 +5,14 @@ import org.apache.commons.configuration2.FileBasedConfiguration;
 import org.apache.commons.configuration2.ImmutableConfiguration;
 import org.apache.commons.configuration2.PropertiesConfiguration;
 import org.apache.commons.configuration2.builder.ConfigurationBuilderEvent;
+import org.apache.commons.configuration2.builder.FileBasedConfigurationBuilder;
 import org.apache.commons.configuration2.builder.ReloadingFileBasedConfigurationBuilder;
+import org.apache.commons.configuration2.builder.fluent.FileBasedBuilderParameters;
 import org.apache.commons.configuration2.builder.fluent.Parameters;
 import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.commons.configuration2.reloading.PeriodicReloadingTrigger;
 import org.apache.commons.configuration2.reloading.ReloadingController;
+import org.apache.commons.configuration2.sync.ReadWriteSynchronizer;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -29,7 +32,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public class ConfigurationLifecycle implements AutoCloseable {
 
     private final int triggerPeriodMillis;
-    private final String configFileName;
     private final Map<String, List<ConfigurationLifecycleListener>> listenerMap;
     private final PeriodicReloadingTrigger trigger;
     private final ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration> builder;
@@ -45,13 +47,14 @@ public class ConfigurationLifecycle implements AutoCloseable {
         executorService = Executors.newSingleThreadScheduledExecutor();
         configurationReference = new AtomicReference<>();
         this.triggerPeriodMillis = triggerPeriodMillis;
-        this.configFileName = configFileName;
 
-        Parameters params = new Parameters();
         File propertiesFile = new File(configFileName);
-
+        final FileBasedBuilderParameters params = new Parameters()
+                .fileBased()
+                .setFile(propertiesFile)
+                .setSynchronizer(new ReadWriteSynchronizer());
         builder = new ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration>(PropertiesConfiguration.class)
-                        .configure(params.fileBased().setFile(propertiesFile));
+                        .configure(params);
         builder.addEventListener(ConfigurationBuilderEvent.ANY,
                 event -> {
                     try {
@@ -81,10 +84,33 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public void setProperty(String key, Object value) throws ConfigurationException {
+        setProperty(key, value, true);
+    }
+
+    public void setProperty(String key, Object value, boolean save) throws ConfigurationException {
         final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
         final FileBasedConfiguration configuration = builder.getConfiguration();
         configuration.setProperty(key, value);
         invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration));
+        checkAndSave(save);
+    }
+
+    public void checkAndSave(boolean save) throws ConfigurationException {
+        if (save) {
+            builder.save();
+        }
+    }
+
+    public void setProperties(Map<String, Object> properties) throws ConfigurationException {
+        setProperties(properties, true);
+    }
+
+    public void setProperties(Map<String, Object> properties, boolean save) throws ConfigurationException {
+        final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
+        final FileBasedConfiguration configuration = builder.getConfiguration();
+        properties.forEach(configuration::setProperty);
+        invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration));
+        checkAndSave(save);
     }
 
     public void addConfigurationLifecycleListener(EventType eventType, ConfigurationLifecycleListener listener) {

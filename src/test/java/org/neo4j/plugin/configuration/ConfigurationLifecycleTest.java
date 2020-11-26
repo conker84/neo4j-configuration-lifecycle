@@ -123,12 +123,12 @@ public class ConfigurationLifecycleTest {
     public void testSetAPIsShouldNotBeInvoked() throws Exception {
         ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         AtomicInteger countConfigurationChanged = new AtomicInteger();
-        AtomicInteger countNone = new AtomicInteger();
+        CountDownLatch countdownNone = new CountDownLatch(1);
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
             countConfigurationChanged.incrementAndGet();
         });
         configurationLifecycle.addConfigurationLifecycleListener(EventType.NONE, (evt, conf) -> {
-            countNone.incrementAndGet();
+            countdownNone.countDown();
         });
         configurationLifecycle.start();
         // `foo=bar` already exists into the property
@@ -136,9 +136,9 @@ public class ConfigurationLifecycleTest {
         // should not affect the `CONFIGURATION_CHANGED`
         // but invoking instead `NONE`
         configurationLifecycle.setProperty("foo", "bar");
-        Thread.sleep(2000);
+        countdownNone.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countConfigurationChanged.get());
-        Assert.assertEquals(1, countNone.get());
+        Assert.assertEquals(0, countdownNone.getCount());
         configurationLifecycle.stop();
     }
 
@@ -177,6 +177,7 @@ public class ConfigurationLifecycleTest {
     public void testSetPropertyReloadFile() throws Exception {
         String newKey = String.format("my.prop.%d", System.currentTimeMillis());
         String newValue = UUID.randomUUID().toString();
+        Thread.sleep(2000);
         String otherNewKey = String.format("my.prop.%d", System.currentTimeMillis());
         String otherNewValue = UUID.randomUUID().toString();
         ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
