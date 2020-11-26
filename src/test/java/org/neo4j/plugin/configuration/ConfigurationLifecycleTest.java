@@ -133,4 +133,34 @@ public class ConfigurationLifecycleTest {
         Assert.assertEquals(0, countConfigurationChanged.get());
         Assert.assertEquals(1, countNone.get());
     }
+
+    @Test
+    public void testReloadFileWithRestart() throws Exception {
+        long timestamp = System.currentTimeMillis();
+        String newKey = String.format("my.prop.%d", timestamp);
+        String newValue = UUID.randomUUID().toString();
+        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
+            countDownLatch.countDown();
+            int count = (int) countDownLatch.getCount();
+            switch (count) {
+                case 0:
+                    Assert.assertEquals(newValue, conf.getString(newKey));
+                    break;
+            }
+        });
+        configurationLifecycle.start();
+        Thread.sleep(2000);
+        configurationLifecycle.stop();
+        Thread.sleep(2000);
+        configurationLifecycle.start();
+        try (FileWriter fw = new FileWriter(FILE, true);
+             BufferedWriter bw = new BufferedWriter(fw)) {
+            bw.write(String.format("%s=%s", newKey, newValue));
+            bw.newLine();
+        }
+        countDownLatch.await(30, TimeUnit.SECONDS);
+        Assert.assertEquals(0, countDownLatch.getCount());
+    }
 }

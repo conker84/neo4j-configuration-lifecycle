@@ -19,7 +19,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -32,15 +35,16 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private final Map<String, List<ConfigurationLifecycleListener>> listenerMap;
     private final PeriodicReloadingTrigger trigger;
     private final ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration> builder;
-    private final ExecutorService executorService;
+    private final ScheduledExecutorService executorService;
 
     private final Object lifecycleMonitor = new Object();
     private final Object configurationMonitor = new Object();
     private final AtomicReference<ImmutableConfiguration> configurationReference;
+    private ScheduledFuture<?> scheduledFuture;
 
     public ConfigurationLifecycle(int triggerPeriodMillis, String configFileName) {
         listenerMap = new ConcurrentHashMap<>();
-        executorService = Executors.newSingleThreadExecutor();
+        executorService = Executors.newSingleThreadScheduledExecutor();
         configurationReference = new AtomicReference<>();
         this.triggerPeriodMillis = triggerPeriodMillis;
         this.configFileName = configFileName;
@@ -103,7 +107,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public boolean isRunning() {
-        return trigger.isRunning() && !executorService.isShutdown();
+        return trigger.isRunning();
     }
 
     public void start() {
@@ -112,12 +116,9 @@ public class ConfigurationLifecycle implements AutoCloseable {
             // this is a workaround because the configuration2
             // framework reloads the configuration on demand
             // when you ask for a configuration value
-            executorService.submit(() -> {
-                while (true) {
-                    reload();
-                    Thread.sleep(triggerPeriodMillis);
-                }
-            });
+            scheduledFuture = executorService.scheduleAtFixedRate(() -> reload(),
+                    triggerPeriodMillis, triggerPeriodMillis,
+                    TimeUnit.MILLISECONDS);
         }
     }
 
@@ -131,8 +132,8 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void stop() {
         synchronized (lifecycleMonitor) {
-            trigger.shutdown(true);
-            executorService.shutdown();
+            trigger.shutdown(false);
+            scheduledFuture.cancel(false);
         }
     }
 
