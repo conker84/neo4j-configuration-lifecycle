@@ -59,6 +59,7 @@ public class ConfigurationLifecycleTest {
         }
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
+        configurationLifecycle.stop();
     }
 
     @Test
@@ -82,6 +83,7 @@ public class ConfigurationLifecycleTest {
         Thread.sleep(2000);
         Assert.assertEquals(0, countConfigurationChanged.get());
         Assert.assertEquals(0, countNone.get());
+        configurationLifecycle.stop();
     }
 
     @Test
@@ -114,6 +116,7 @@ public class ConfigurationLifecycleTest {
         configurationLifecycle.setProperty(newKey, newValue);
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
+        configurationLifecycle.stop();
     }
 
     @Test
@@ -132,6 +135,7 @@ public class ConfigurationLifecycleTest {
         Thread.sleep(2000);
         Assert.assertEquals(0, countConfigurationChanged.get());
         Assert.assertEquals(1, countNone.get());
+        configurationLifecycle.stop();
     }
 
     @Test
@@ -162,5 +166,6 @@ public class ConfigurationLifecycleTest {
         }
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
+        configurationLifecycle.stop();
     }
 }
