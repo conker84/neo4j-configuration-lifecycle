@@ -130,8 +130,12 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void stop() {
         synchronized (lifecycleMonitor) {
-            trigger.shutdown(false);
-            scheduledFuture.cancel(false);
+            if (trigger != null) {
+                trigger.shutdown(false);
+            }
+            if (scheduledFuture != null) {
+                scheduledFuture.cancel(false);
+            }
         }
     }
 
