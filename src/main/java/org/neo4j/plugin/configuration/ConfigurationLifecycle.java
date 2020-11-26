@@ -69,9 +69,12 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     private void invokeListeners(ImmutableConfiguration oldConfig, ImmutableConfiguration newConfig) {
-        List<EventType> evtTree = ConfigurationLifecycleUtils.getEventType(newConfig, oldConfig).getTree();
+        final EventType eventType = ConfigurationLifecycleUtils.getEventType(newConfig, oldConfig);
+        // we notify all the super types, so we retrieve the full dependency tree
+        final List<EventType> evtTree = eventType.getTree();
         evtTree.forEach(evt -> listenerMap.getOrDefault(evt.toString(), Collections.emptyList())
-                    .forEach(listener -> listener.onConfigurationChange(evt, newConfig)));
+                    // for each event of the tree we sent the actual type, not the super type
+                    .forEach(listener -> listener.onConfigurationChange(eventType, newConfig)));
         configurationReference.set(newConfig);
     }
 
