@@ -6,7 +6,6 @@ import org.apache.commons.configuration2.FileBasedConfiguration;
 import org.apache.commons.configuration2.ImmutableConfiguration;
 import org.apache.commons.configuration2.PropertiesConfiguration;
 import org.apache.commons.configuration2.builder.ConfigurationBuilderEvent;
-import org.apache.commons.configuration2.builder.FileBasedConfigurationBuilder;
 import org.apache.commons.configuration2.builder.ReloadingFileBasedConfigurationBuilder;
 import org.apache.commons.configuration2.builder.fluent.FileBasedBuilderParameters;
 import org.apache.commons.configuration2.builder.fluent.Parameters;
@@ -43,7 +42,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private final AtomicReference<ImmutableConfiguration> configurationReference;
     private ScheduledFuture<?> scheduledFuture;
 
-    public ConfigurationLifecycle(int triggerPeriodMillis, String configFileName) {
+    public ConfigurationLifecycle(int triggerPeriodMillis, String configFileName, boolean allowFailOnInit) {
         listenerMap = new ConcurrentHashMap<>();
         executorService = Executors.newSingleThreadScheduledExecutor();
         configurationReference = new AtomicReference<>();
@@ -54,7 +53,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 .fileBased()
                 .setFile(propertiesFile)
                 .setSynchronizer(new ReadWriteSynchronizer());
-        builder = new ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration>(PropertiesConfiguration.class)
+        builder = new ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration>(PropertiesConfiguration.class, null, allowFailOnInit)
                         .configure(params);
         builder.addEventListener(ConfigurationBuilderEvent.ANY,
                 event -> {

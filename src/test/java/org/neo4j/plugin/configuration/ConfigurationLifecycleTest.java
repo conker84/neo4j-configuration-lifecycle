@@ -1,6 +1,8 @@
 package org.neo4j.plugin.configuration;
 
+import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.io.BufferedWriter;
@@ -25,12 +27,25 @@ public class ConfigurationLifecycleTest {
     private static final File FILE = fromResource("test.properties");
     private static final int TRIGGER_PERIOD_MILLIS = 500;
 
+    private ConfigurationLifecycle configurationLifecycle;
+
+    @Before
+    public void before() {
+        configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath(), true);
+    }
+
+    @After
+    public void after() {
+        if (configurationLifecycle != null && configurationLifecycle.isRunning()) {
+            configurationLifecycle.stop();
+        }
+    }
+
     @Test
     public void testReloadFile() throws Exception {
         long timestamp = System.currentTimeMillis();
         String newKey = String.format("my.prop.%d", timestamp);
         String newValue = UUID.randomUUID().toString();
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         CountDownLatch countDownLatch = new CountDownLatch(3);
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_INITIALIZED, (evt, conf) -> {
             countDownLatch.countDown();
@@ -64,7 +79,6 @@ public class ConfigurationLifecycleTest {
 
     @Test
     public void testReloadFileAddBlankLine() throws Exception {
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         AtomicInteger countConfigurationChanged = new AtomicInteger();
         AtomicInteger countNone = new AtomicInteger();
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
@@ -91,7 +105,6 @@ public class ConfigurationLifecycleTest {
         long timestamp = System.currentTimeMillis();
         String newKey = String.format("my.prop.%d", timestamp);
         String newValue = UUID.randomUUID().toString();
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         CountDownLatch countDownLatch = new CountDownLatch(2);
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_INITIALIZED, (evt, conf) -> {
             countDownLatch.countDown();
@@ -121,7 +134,6 @@ public class ConfigurationLifecycleTest {
 
     @Test
     public void testSetAPIsShouldNotBeInvoked() throws Exception {
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         AtomicInteger countConfigurationChanged = new AtomicInteger();
         CountDownLatch countdownNone = new CountDownLatch(1);
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
@@ -147,7 +159,6 @@ public class ConfigurationLifecycleTest {
         long timestamp = System.currentTimeMillis();
         String newKey = String.format("my.prop.%d", timestamp);
         String newValue = UUID.randomUUID().toString();
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         CountDownLatch countDownLatch = new CountDownLatch(1);
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
             countDownLatch.countDown();
@@ -180,7 +191,6 @@ public class ConfigurationLifecycleTest {
         Thread.sleep(2000);
         String otherNewKey = String.format("my.prop.%d", System.currentTimeMillis());
         String otherNewValue = UUID.randomUUID().toString();
-        ConfigurationLifecycle configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath());
         CountDownLatch countDownLatch = new CountDownLatch(2);
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
             countDownLatch.countDown();
