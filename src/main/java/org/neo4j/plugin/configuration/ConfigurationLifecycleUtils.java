@@ -1,6 +1,5 @@
 package org.neo4j.plugin.configuration;
 
-import org.apache.commons.configuration2.ConfigurationUtils;
 import org.apache.commons.configuration2.ImmutableConfiguration;
 
 import java.util.AbstractMap;

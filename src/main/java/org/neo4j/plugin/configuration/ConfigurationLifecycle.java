@@ -13,9 +13,12 @@ import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.commons.configuration2.reloading.PeriodicReloadingTrigger;
 import org.apache.commons.configuration2.reloading.ReloadingController;
 import org.apache.commons.configuration2.sync.ReadWriteSynchronizer;
+import org.neo4j.plugin.configuration.listners.ConfigurationLifecycleListener;
+import org.neo4j.plugin.configuration.listners.ShutdownListener;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -173,6 +176,12 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 if (shutdown) {
                     executorService.shutdown();
                 }
+            }
+            if (shutdown) {
+                this.listenerMap.values()
+                        .stream()
+                        .flatMap(Collection::stream)
+                        .forEach(ShutdownListener::onShutdown);
             }
         }
     }

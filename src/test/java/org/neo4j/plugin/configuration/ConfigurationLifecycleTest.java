@@ -1,9 +1,11 @@
 package org.neo4j.plugin.configuration;
 
+import org.apache.commons.configuration2.ImmutableConfiguration;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.neo4j.plugin.configuration.listners.ConfigurationLifecycleListener;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -215,5 +217,25 @@ public class ConfigurationLifecycleTest {
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
         configurationLifecycle.stop();
+    }
+
+    @Test
+    public void testOnShutdownInvocation() throws Exception {
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, new ConfigurationLifecycleListener() {
+            @Override
+            public void onConfigurationChange(EventType event, ImmutableConfiguration config) {
+
+            }
+
+            @Override
+            public void onShutdown() {
+                countDownLatch.countDown();
+            }
+        });
+        configurationLifecycle.start();
+        configurationLifecycle.stop(true);
+        countDownLatch.await(30, TimeUnit.SECONDS);
+        Assert.assertEquals(0, countDownLatch.getCount());
     }
 }
