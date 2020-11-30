@@ -173,6 +173,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
             }
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false);
+                scheduledFuture = null;
                 if (shutdown) {
                     executorService.shutdown();
                 }
