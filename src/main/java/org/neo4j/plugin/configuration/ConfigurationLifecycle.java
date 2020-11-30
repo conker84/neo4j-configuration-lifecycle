@@ -29,9 +29,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Hello world!
- */
 public class ConfigurationLifecycle implements AutoCloseable {
 
     private final int triggerPeriodMillis;
