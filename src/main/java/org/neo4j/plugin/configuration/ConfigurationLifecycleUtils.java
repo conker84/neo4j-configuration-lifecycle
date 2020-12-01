@@ -3,6 +3,8 @@ package org.neo4j.plugin.configuration;
 import org.apache.commons.configuration2.ImmutableConfiguration;
 
 import java.util.AbstractMap;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.Spliterator;
@@ -45,6 +47,25 @@ public class ConfigurationLifecycleUtils {
         return StreamSupport
                 .stream(Spliterators.spliteratorUnknownSize(config.getKeys(), Spliterator.SIZED), false)
                 .map(key -> new AbstractMap.SimpleEntry<>(key, config.getProperty(key)))
+                .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
+    }
+
+    public static String convertEnvKey(String key) {
+        final String newKey = (key == null ? "" : key)
+                .replace("NEO4J_", "");
+        return Arrays.asList(newKey.split("__"))
+                .stream()
+                .map(s -> s.replace("_", "."))
+                .collect(Collectors.joining("_"));
+    }
+
+    public static Map<String, Object> getNeo4jEnvVars(Collection<String> supportedEnvVarPrefixes) {
+        return System.getenv()
+                .entrySet()
+                .stream()
+                .filter(e -> e.getKey().startsWith("NEO4J_"))
+                .map(e -> new AbstractMap.SimpleEntry<>(convertEnvKey(e.getKey()), e.getValue()))
+                .filter(e -> supportedEnvVarPrefixes.isEmpty() ? true : supportedEnvVarPrefixes.stream().anyMatch(supportedPrefix -> e.getKey().startsWith(supportedPrefix)))
                 .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
     }
 }

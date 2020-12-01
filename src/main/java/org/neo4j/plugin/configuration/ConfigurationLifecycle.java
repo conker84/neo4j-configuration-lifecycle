@@ -18,6 +18,7 @@ import org.neo4j.plugin.configuration.listners.ShutdownListener;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -41,12 +42,25 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private final Object configurationMonitor = new Object();
     private final AtomicReference<ImmutableConfiguration> configurationReference;
     private ScheduledFuture<?> scheduledFuture;
+    private final List<String> supportedEnvVarPrefixes;
 
-    public ConfigurationLifecycle(int triggerPeriodMillis, String configFileName, boolean allowFailOnInit) {
+    public ConfigurationLifecycle(int triggerPeriodMillis,
+                                  String configFileName,
+                                  boolean allowFailOnInit) {
+        this(triggerPeriodMillis, configFileName, allowFailOnInit, false, null);
+    }
+
+    public ConfigurationLifecycle(int triggerPeriodMillis,
+                                  String configFileName,
+                                  boolean allowFailOnInit,
+                                  boolean loadEvnVars,
+                                  String... supportedEnvVarPrefixes) {
         listenerMap = new ConcurrentHashMap<>();
         executorService = Executors.newSingleThreadScheduledExecutor();
         configurationReference = new AtomicReference<>();
         this.triggerPeriodMillis = triggerPeriodMillis;
+        this.supportedEnvVarPrefixes = supportedEnvVarPrefixes == null || supportedEnvVarPrefixes.length == 0 ?
+                Collections.emptyList() : Collections.unmodifiableList(Arrays.asList(supportedEnvVarPrefixes));
 
         File propertiesFile = new File(configFileName);
         final FileBasedBuilderParameters params = new Parameters()
@@ -55,6 +69,16 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 .setSynchronizer(new ReadWriteSynchronizer());
         builder = new ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration>(PropertiesConfiguration.class, null, allowFailOnInit)
                         .configure(params);
+        if (loadEvnVars) {
+            initEnvVars();
+        }
+        addBuilderListener();
+        final ReloadingController reloadingController = builder.getReloadingController();
+        trigger = new PeriodicReloadingTrigger(reloadingController,
+                null, triggerPeriodMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private void addBuilderListener() {
         builder.addEventListener(ConfigurationBuilderEvent.ANY,
                 event -> {
                     try {
@@ -68,9 +92,17 @@ public class ConfigurationLifecycle implements AutoCloseable {
                         throw new RuntimeException(e);
                     }
                 });
-        final ReloadingController reloadingController = builder.getReloadingController();
-        trigger = new PeriodicReloadingTrigger(reloadingController,
-                null, triggerPeriodMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private void initEnvVars() {
+        try {
+            final Map<String, Object> neo4jEnvVars = ConfigurationLifecycleUtils.getNeo4jEnvVars(supportedEnvVarPrefixes);
+            if (!neo4jEnvVars.isEmpty()) {
+                final FileBasedConfiguration configuration = builder.getConfiguration();
+                neo4jEnvVars.forEach(configuration::setProperty);
+                checkAndSave(true);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void invokeListeners(ImmutableConfiguration oldConfig, ImmutableConfiguration newConfig) {
@@ -95,7 +127,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
         checkAndSave(save);
     }
 
-    public void checkAndSave(boolean save) throws ConfigurationException {
+    private void checkAndSave(boolean save) throws ConfigurationException {
         if (save) {
             builder.save();
         }
