@@ -86,8 +86,8 @@ public class ConfigurationLifecycleTest {
 
     private void assertEnvVars() throws ConfigurationException {
         final Map<String, Object> neo4jEnvVars = ConfigurationLifecycleUtils.getNeo4jEnvVars(Collections.emptyList());
-        System.out.println("neo4jEnvVars = " + neo4jEnvVars);
         if (!neo4jEnvVars.isEmpty()) {
+            System.out.println("neo4jEnvVars = " + neo4jEnvVars);
             // if `NEO4J_*` env vars are present check that are correctly imported
             final ImmutableConfiguration configuration = configurationLifecycle.getConfiguration();
             neo4jEnvVars.forEach((k, v) -> Assert.assertEquals(v, configuration.getProperty(k)));
