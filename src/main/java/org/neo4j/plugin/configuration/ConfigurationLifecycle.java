@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -36,7 +37,8 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private final Map<String, List<ConfigurationLifecycleListener>> listenerMap;
     private final PeriodicReloadingTrigger trigger;
     private final ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration> builder;
-    private final ScheduledExecutorService executorService;
+    private final ScheduledExecutorService scheduledExecutorService;
+    private final ExecutorService listenerExecutorService;
 
     private final Object lifecycleMonitor = new Object();
     private final AtomicReference<ImmutableConfiguration> configurationReference;
@@ -55,7 +57,8 @@ public class ConfigurationLifecycle implements AutoCloseable {
                                   boolean loadEvnVars,
                                   String... supportedEnvVarPrefixes) {
         listenerMap = new ConcurrentHashMap<>();
-        executorService = Executors.newSingleThreadScheduledExecutor();
+        scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+        listenerExecutorService = Executors.newFixedThreadPool(10);
         configurationReference = new AtomicReference<>();
         this.triggerPeriodMillis = triggerPeriodMillis;
         this.supportedEnvVarPrefixes = supportedEnvVarPrefixes == null || supportedEnvVarPrefixes.length == 0 ?
@@ -120,7 +123,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
         final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
         final FileBasedConfiguration configuration = builder.getConfiguration();
         configuration.setProperty(key, value);
-        invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration));
+        listenerExecutorService.submit(() -> invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration)));
         checkAndSave(save);
     }
 
@@ -138,7 +141,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
         final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
         final FileBasedConfiguration configuration = builder.getConfiguration();
         properties.forEach(configuration::setProperty);
-        invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration));
+        listenerExecutorService.submit(() -> invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration)));
         checkAndSave(save);
     }
 
@@ -174,7 +177,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
             // this is a workaround because the configuration2
             // framework reloads the configuration on demand
             // when you ask for a configuration value
-            scheduledFuture = executorService.scheduleAtFixedRate(() -> reload(),
+            scheduledFuture = scheduledExecutorService.scheduleAtFixedRate(() -> reload(),
                     triggerPeriodMillis, triggerPeriodMillis,
                     TimeUnit.MILLISECONDS);
         }
@@ -201,10 +204,11 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 scheduledFuture.cancel(false);
                 scheduledFuture = null;
                 if (shutdown) {
-                    executorService.shutdown();
+                    scheduledExecutorService.shutdown();
                 }
             }
             if (shutdown) {
+                listenerExecutorService.shutdown();
                 this.listenerMap.values()
                         .stream()
                         .flatMap(Collection::stream)
