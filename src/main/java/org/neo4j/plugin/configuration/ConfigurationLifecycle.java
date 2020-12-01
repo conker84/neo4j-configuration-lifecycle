@@ -39,7 +39,6 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private final ScheduledExecutorService executorService;
 
     private final Object lifecycleMonitor = new Object();
-    private final Object configurationMonitor = new Object();
     private final AtomicReference<ImmutableConfiguration> configurationReference;
     private ScheduledFuture<?> scheduledFuture;
     private final List<String> supportedEnvVarPrefixes;
@@ -83,10 +82,8 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 event -> {
                     try {
                         if (event.getEventType().getName().equals("RESULT_CREATED")) {
-                            synchronized (configurationMonitor) {
-                                final ImmutableConfiguration configuration = event.getSource().getConfiguration();
-                                invokeListeners(configurationReference.get(), configuration);
-                            }
+                            final ImmutableConfiguration configuration = event.getSource().getConfiguration();
+                            invokeListeners(configurationReference.get(), configuration);
                         }
                     } catch (Exception e) {
                         throw new RuntimeException(e);
