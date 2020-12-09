@@ -1,5 +1,6 @@
 package org.neo4j.plugin.configuration;
 
+import org.apache.commons.configuration2.CombinedConfiguration;
 import org.apache.commons.configuration2.Configuration;
 import org.apache.commons.configuration2.ConfigurationUtils;
 import org.apache.commons.configuration2.FileBasedConfiguration;
@@ -7,6 +8,7 @@ import org.apache.commons.configuration2.ImmutableConfiguration;
 import org.apache.commons.configuration2.PropertiesConfiguration;
 import org.apache.commons.configuration2.builder.ConfigurationBuilderEvent;
 import org.apache.commons.configuration2.builder.ReloadingFileBasedConfigurationBuilder;
+import org.apache.commons.configuration2.builder.combined.ReloadingCombinedConfigurationBuilder;
 import org.apache.commons.configuration2.builder.fluent.FileBasedBuilderParameters;
 import org.apache.commons.configuration2.builder.fluent.Parameters;
 import org.apache.commons.configuration2.ex.ConfigurationException;
@@ -30,13 +32,19 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 public class ConfigurationLifecycle implements AutoCloseable {
+
+    public static final String SUN_JAVA_COMMAND = "sun.java.command";
+    private static final String DEFAULT_PATH = ".";
+    private static final String CONFIG_DIR = "config-dir=";
 
     private final int triggerPeriodMillis;
     private final Map<String, List<ConfigurationLifecycleListener>> listenerMap;
     private final PeriodicReloadingTrigger trigger;
-    private final ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration> builder;
+//    private final ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration> builder;
+    private final ReloadingCombinedConfigurationBuilder builder;
     private final ScheduledExecutorService scheduledExecutorService;
     private final ExecutorService listenerExecutorService;
 
@@ -52,7 +60,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public ConfigurationLifecycle(int triggerPeriodMillis,
-                                  String configFileName,
+                                  String confFileName,
                                   boolean allowFailOnInit,
                                   boolean loadEvnVars,
                                   String... supportedEnvVarPrefixes) {
@@ -64,20 +72,57 @@ public class ConfigurationLifecycle implements AutoCloseable {
         this.supportedEnvVarPrefixes = supportedEnvVarPrefixes == null || supportedEnvVarPrefixes.length == 0 ?
                 Collections.emptyList() : Collections.unmodifiableList(Arrays.asList(supportedEnvVarPrefixes));
 
-        File propertiesFile = new File(configFileName);
+//        File propertiesFile = new File(configFileName);
+//        final FileBasedBuilderParameters params = new Parameters()
+//                .fileBased()
+//                .setFile(propertiesFile)
+//                .setSynchronizer(new ReadWriteSynchronizer());
+//        builder = new ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration>(PropertiesConfiguration.class, null, allowFailOnInit)
+//                        .configure(params);
+//        if (loadEvnVars) {
+//            initEnvVars();
+//        }
+
+        setSystemProps(confFileName);
         final FileBasedBuilderParameters params = new Parameters()
                 .fileBased()
-                .setFile(propertiesFile)
+                .setURL(this.getClass()
+                        .getClassLoader()
+                        .getResource("plugin-lifecycle-conf.xml"))
                 .setSynchronizer(new ReadWriteSynchronizer());
-        builder = new ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration>(PropertiesConfiguration.class, null, allowFailOnInit)
-                        .configure(params);
-        if (loadEvnVars) {
-            initEnvVars();
-        }
+        builder = new ReloadingCombinedConfigurationBuilder()
+                .configure(params);
         addBuilderListener();
+
+        try {
+            builder.getConfiguration();
+        } catch (ConfigurationException e) {
+            e.printStackTrace();
+        }
         final ReloadingController reloadingController = builder.getReloadingController();
         trigger = new PeriodicReloadingTrigger(reloadingController,
                 null, triggerPeriodMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private String determineNeo4jConfFolder() {
+        String command = System.getProperty(SUN_JAVA_COMMAND);
+        if (command == null) {
+            return DEFAULT_PATH;
+        } else {
+            final String neo4jConfFolder = Stream.of(command.split("--"))
+                    .map(String::trim)
+                    .filter(s -> s.startsWith(CONFIG_DIR))
+                    .map(s -> s.substring(CONFIG_DIR.length()))
+                    .findFirst()
+                    .orElse(DEFAULT_PATH);
+            return neo4jConfFolder;
+        }
+    }
+
+    private void setSystemProps(String confFileName) {
+        String neo4jConfFolder = System.getenv().getOrDefault("NEO4J_CONF", determineNeo4jConfFolder());
+        System.setProperty("NEO4J_CONF", neo4jConfFolder);
+        System.setProperty("NEO4J_PLUGIN_NAME", confFileName);
     }
 
     private void addBuilderListener() {
@@ -94,16 +139,16 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 });
     }
 
-    private void initEnvVars() {
-        try {
-            final Map<String, Object> neo4jEnvVars = ConfigurationLifecycleUtils.getNeo4jEnvVars(supportedEnvVarPrefixes);
-            if (!neo4jEnvVars.isEmpty()) {
-                final FileBasedConfiguration configuration = builder.getConfiguration();
-                neo4jEnvVars.forEach(configuration::setProperty);
-                checkAndSave(true);
-            }
-        } catch (Exception ignored) {}
-    }
+//    private void initEnvVars() {
+//        try {
+//            final Map<String, Object> neo4jEnvVars = ConfigurationLifecycleUtils.getNeo4jEnvVars(supportedEnvVarPrefixes);
+//            if (!neo4jEnvVars.isEmpty()) {
+//                final FileBasedConfiguration configuration = builder.getConfiguration();
+//                neo4jEnvVars.forEach(configuration::setProperty);
+//                checkAndSave(true);
+//            }
+//        } catch (Exception ignored) {}
+//    }
 
     private void invokeListeners(ImmutableConfiguration oldConfig, ImmutableConfiguration newConfig) {
         final EventType eventType = ConfigurationLifecycleUtils.getEventType(newConfig, oldConfig);
@@ -121,17 +166,18 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void setProperty(String key, Object value, boolean save) throws ConfigurationException {
         final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
-        final FileBasedConfiguration configuration = builder.getConfiguration();
+//        final FileBasedConfiguration configuration = builder.getConfiguration();
+        final CombinedConfiguration configuration = builder.getConfiguration();
         configuration.setProperty(key, value);
         listenerExecutorService.submit(() -> invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration)));
-        checkAndSave(save);
+//        checkAndSave(save);
     }
 
-    private void checkAndSave(boolean save) throws ConfigurationException {
-        if (save) {
-            builder.save();
-        }
-    }
+//    private void checkAndSave(boolean save) throws ConfigurationException {
+//        if (save) {
+//            builder.save();
+//        }
+//    }
 
     public void setProperties(Map<String, Object> properties) throws ConfigurationException {
         setProperties(properties, true);
@@ -139,10 +185,11 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void setProperties(Map<String, Object> properties, boolean save) throws ConfigurationException {
         final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
-        final FileBasedConfiguration configuration = builder.getConfiguration();
+//        final FileBasedConfiguration configuration = builder.getConfiguration();
+        final CombinedConfiguration configuration = builder.getConfiguration();
         properties.forEach(configuration::setProperty);
         listenerExecutorService.submit(() -> invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration)));
-        checkAndSave(save);
+//        checkAndSave(save);
     }
 
     public ImmutableConfiguration getConfiguration() throws ConfigurationException {
@@ -173,6 +220,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void start() {
         synchronized (lifecycleMonitor) {
+            reload();
             trigger.start();
             // this is a workaround because the configuration2
             // framework reloads the configuration on demand

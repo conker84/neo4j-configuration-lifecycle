@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<configuration>
+    <env/>  <!-- env variables take precedence -->
+    <system/>
+    <properties fileName="${sys:NEO4J_CONF}/${sys:NEO4J_PLUGIN_NAME}" config-forceCreate="true" config-optional="true" config-reload="true" reloadingRefreshDelay="10000"/> <!-- we're setting NEO4J_CONF in ApocConfig.java -->
+</configuration>

@@ -29,14 +29,14 @@ public class ConfigurationLifecycleTest {
         try {
             return new File(Thread.currentThread()
                     .getContextClassLoader()
-                    .getResource("test.properties")
+                    .getResource("test.conf")
                     .toURI());
         } catch (URISyntaxException e) {
             return null;
         }
     }
     
-    private static final File FILE = fromResource("test.properties");
+    private static final File FILE = fromResource("test.conf");
     private static final int TRIGGER_PERIOD_MILLIS = 100;
 
     private ConfigurationLifecycle configurationLifecycle;
