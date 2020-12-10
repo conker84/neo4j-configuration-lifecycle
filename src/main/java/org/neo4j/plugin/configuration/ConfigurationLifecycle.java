@@ -31,6 +31,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 public class ConfigurationLifecycle implements AutoCloseable {
@@ -69,7 +70,6 @@ public class ConfigurationLifecycle implements AutoCloseable {
         this.supportedEnvVarPrefixes = supportedEnvVarPrefixes == null || supportedEnvVarPrefixes.length == 0 ?
                 Collections.emptyList() : Collections.unmodifiableList(Arrays.asList(supportedEnvVarPrefixes));
         this.log = log;
-
         File propertiesFile = new File(configFileName);
         final FileBasedBuilderParameters params = new Parameters()
                 .fileBased()
@@ -89,12 +89,12 @@ public class ConfigurationLifecycle implements AutoCloseable {
         builder.addEventListener(ConfigurationBuilderEvent.ANY,
                 event -> {
                     try {
-                        if (event.getEventType().getName().equals("RESULT_CREATED")) {
-                            final ImmutableConfiguration configuration = event.getSource().getConfiguration();
-                            invokeListeners(configurationReference.get(), configuration);
+                        if (trigger.isRunning() && event.getEventType().getName().equals("RESULT_CREATED")) {
+                            final ImmutableConfiguration newConfiguration = event.getSource().getConfiguration();
+                            invokeListeners(configurationReference.get(), newConfiguration);
                         }
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
+                    } catch (Exception ignored) {
+                        log.warn("Cannot invoke listeners because the following exception:", ignored);
                     }
                 });
     }
@@ -103,11 +103,14 @@ public class ConfigurationLifecycle implements AutoCloseable {
         try {
             final Map<String, Object> neo4jEnvVars = ConfigurationLifecycleUtils.getNeo4jEnvVars(supportedEnvVarPrefixes);
             if (!neo4jEnvVars.isEmpty()) {
+                log.info("Configuration has found the following environment variables: %s", neo4jEnvVars);
                 final FileBasedConfiguration configuration = builder.getConfiguration();
                 neo4jEnvVars.forEach(configuration::setProperty);
                 checkAndSave(true);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+            log.warn("Error while we're persisting the environment variables because the following exception:", ignored);
+        }
     }
 
     private void invokeListeners(ImmutableConfiguration oldConfig, ImmutableConfiguration newConfig) {
@@ -118,11 +121,12 @@ public class ConfigurationLifecycle implements AutoCloseable {
         // we notify all the super types, so we retrieve the full dependency tree
         final List<EventType> evtTree = eventType.getTree();
         if (log.isDebugEnabled()) {
+            final Collector<CharSequence, ?, String> joining = Collectors.joining(",");
             log.debug("The event tree is [%s]", evtTree.stream()
                     .map(Enum::name)
-                    .collect(Collectors.joining(",")));
+                    .collect(joining));
             log.debug("The listenerMap contains the following listeners: [%s]", listenerMap.keySet().stream()
-                    .collect(Collectors.joining(",")));
+                    .collect(joining));
         }
         evtTree.forEach(evt -> listenerMap.getOrDefault(evt.toString(), Collections.emptyList())
                     // for each event of the tree we sent the actual type, not the super type
@@ -144,6 +148,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     private void checkAndSave(boolean save) throws ConfigurationException {
         if (save) {
+            log.info("Saving the configuration back to the file");
             builder.save();
         }
     }
@@ -166,6 +171,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public void addConfigurationLifecycleListener(EventType eventType, ConfigurationLifecycleListener listener) {
+        log.info("Adding listener for event type %s", eventType.name());
         listenerMap.compute(eventType.toString(), (id, listeners) -> {
             if (listeners == null) {
                 listeners = new ArrayList<>();
@@ -176,6 +182,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public void removeConfigurationLifecycleListener(EventType eventType, ConfigurationLifecycleListener listener) {
+        log.info("Removing listener for event type %s", eventType.name());
         listenerMap.computeIfPresent(eventType.toString(), (id, listeners) -> {
             listeners.remove(listener);
             return listeners;
@@ -188,6 +195,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void start() {
         synchronized (lifecycleMonitor) {
+            log.info("Starting the connector lifecycle listener");
             addBuilderListener();
             trigger.start();
             // this is a workaround because the configuration2
@@ -203,7 +211,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
         try {
             builder.getConfiguration().getString("");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.warn("Cannot reload the configuration because of the following exception:", e);
         }
     }
 
@@ -212,6 +220,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public void stop(boolean shutdown) {
+        log.info("Stopping the connector lifecycle listener with shutdown: %s", shutdown);
         synchronized (lifecycleMonitor) {
             if (trigger != null) {
                 trigger.shutdown(shutdown);
