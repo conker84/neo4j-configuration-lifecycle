@@ -195,6 +195,9 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void start() {
         synchronized (lifecycleMonitor) {
+            if (isRunning()) {
+                return;
+            }
             log.info("Starting the connector lifecycle listener");
             addBuilderListener();
             trigger.start();
@@ -220,8 +223,11 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     public void stop(boolean shutdown) {
-        log.info("Stopping the connector lifecycle listener with shutdown: %s", shutdown);
         synchronized (lifecycleMonitor) {
+            if (!isRunning()) {
+                return;
+            }
+            log.info("Stopping the connector lifecycle listener with shutdown: %s", shutdown);
             if (trigger != null) {
                 trigger.shutdown(shutdown);
             }
