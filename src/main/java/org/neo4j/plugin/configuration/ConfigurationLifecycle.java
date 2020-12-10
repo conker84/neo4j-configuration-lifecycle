@@ -18,6 +18,8 @@ import org.neo4j.plugin.configuration.listners.ConfigurationLifecycleListener;
 import org.neo4j.plugin.configuration.listners.ShutdownListener;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -30,6 +32,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
@@ -48,6 +51,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private ScheduledFuture<?> scheduledFuture;
     private final List<String> supportedEnvVarPrefixes;
     private final Log log;
+    private final AtomicBoolean firstStart;
 
     public ConfigurationLifecycle(int triggerPeriodMillis,
                                   String configFileName,
@@ -60,12 +64,13 @@ public class ConfigurationLifecycle implements AutoCloseable {
                                   String configFileName,
                                   boolean allowFailOnInit,
                                   Log log,
-                                  boolean loadEvnVars,
+                                  boolean loadEnvVars,
                                   String... supportedEnvVarPrefixes) {
         listenerMap = new ConcurrentHashMap<>();
         scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
         listenerExecutorService = Executors.newFixedThreadPool(10);
         configurationReference = new AtomicReference<>();
+        this.firstStart = new AtomicBoolean(true);
         this.triggerPeriodMillis = triggerPeriodMillis;
         this.supportedEnvVarPrefixes = supportedEnvVarPrefixes == null || supportedEnvVarPrefixes.length == 0 ?
                 Collections.emptyList() : Collections.unmodifiableList(Arrays.asList(supportedEnvVarPrefixes));
@@ -77,9 +82,10 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 .setSynchronizer(new ReadWriteSynchronizer());
         builder = new ReloadingFileBasedConfigurationBuilder<FileBasedConfiguration>(PropertiesConfiguration.class, null, allowFailOnInit)
                         .configure(params);
-        if (loadEvnVars) {
+        if (loadEnvVars) {
             initEnvVars();
         }
+        addBuilderListener();
         final ReloadingController reloadingController = builder.getReloadingController();
         trigger = new PeriodicReloadingTrigger(reloadingController,
                 null, triggerPeriodMillis, TimeUnit.MILLISECONDS);
@@ -89,7 +95,9 @@ public class ConfigurationLifecycle implements AutoCloseable {
         builder.addEventListener(ConfigurationBuilderEvent.ANY,
                 event -> {
                     try {
-                        if (trigger.isRunning() && event.getEventType().getName().equals("RESULT_CREATED")) {
+                        final boolean isResultCreated = event.getEventType().getName().equals("RESULT_CREATED");
+                        if (trigger.isRunning() && (isResultCreated || this.firstStart.get())) {
+                            firstStart.set(false);
                             final ImmutableConfiguration newConfiguration = event.getSource().getConfiguration();
                             invokeListeners(configurationReference.get(), newConfiguration);
                         }
@@ -199,7 +207,6 @@ public class ConfigurationLifecycle implements AutoCloseable {
                 return;
             }
             log.info("Starting the connector lifecycle listener");
-            addBuilderListener();
             trigger.start();
             // this is a workaround because the configuration2
             // framework reloads the configuration on demand

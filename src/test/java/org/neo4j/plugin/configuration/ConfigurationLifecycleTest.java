@@ -99,19 +99,19 @@ public class ConfigurationLifecycleTest {
     @Test
     public void testReloadFileAddBlankLine() throws Exception {
         AtomicInteger countConfigurationChanged = new AtomicInteger();
-        AtomicInteger countNone = new AtomicInteger();
+        CountDownLatch countDownNone = new CountDownLatch(1);
         configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, (evt, conf) -> {
             countConfigurationChanged.incrementAndGet();
         });
         configurationLifecycle.addConfigurationLifecycleListener(EventType.NONE, (evt, conf) -> {
-            countNone.incrementAndGet();
+            countDownNone.countDown();
         });
         configurationLifecycle.start();
         Thread.sleep(2000);
         writeToFile(" ");
-        Thread.sleep(2000);
+        countDownNone.await(10, TimeUnit.SECONDS);
         Assert.assertEquals(0, countConfigurationChanged.get());
-        Assert.assertEquals(0, countNone.get());
+        Assert.assertEquals(0, countDownNone.getCount());
         configurationLifecycle.stop();
         assertEnvVars();
     }
@@ -252,6 +252,21 @@ public class ConfigurationLifecycleTest {
         });
         configurationLifecycle.start();
         configurationLifecycle.stop(true);
+        countDownLatch.await(30, TimeUnit.SECONDS);
+        Assert.assertEquals(0, countDownLatch.getCount());
+        assertEnvVars();
+    }
+
+    @Test
+    public void testUnknownFile() throws Exception {
+        this.configurationLifecycle.stop(true);
+        String noopFileName = FILE.getAbsolutePath().replace("test.properties", "noop.properties");
+        this.configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, noopFileName, true, NullLog.getInstance(), true);
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        this.configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_INITIALIZED, (evt, conf) -> {
+            countDownLatch.countDown();
+        });
+        this.configurationLifecycle.start();
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
         assertEnvVars();
