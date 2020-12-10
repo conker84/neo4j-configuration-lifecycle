@@ -8,6 +8,7 @@ import org.junit.Before;
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
+import org.neo4j.logging.NullLog;
 import org.neo4j.plugin.configuration.listners.ConfigurationLifecycleListener;
 
 import java.io.BufferedWriter;
@@ -43,7 +44,8 @@ public class ConfigurationLifecycleTest {
 
     @Before
     public void before() {
-        configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, FILE.getAbsolutePath(), true);
+        configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS,
+                FILE.getAbsolutePath(), true, NullLog.getInstance());
     }
 
     @After

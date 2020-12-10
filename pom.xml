@@ -19,6 +19,13 @@
   </properties>
 
   <dependencies>
+    <!-- https://mvnrepository.com/artifact/org.neo4j/neo4j-logging -->
+    <dependency>
+      <groupId>org.neo4j</groupId>
+      <artifactId>neo4j-logging</artifactId>
+      <version>3.5.22</version>
+      <scope>provided</scope>
+    </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-configuration2</artifactId>

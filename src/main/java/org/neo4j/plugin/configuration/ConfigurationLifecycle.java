@@ -13,6 +13,7 @@ import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.commons.configuration2.reloading.PeriodicReloadingTrigger;
 import org.apache.commons.configuration2.reloading.ReloadingController;
 import org.apache.commons.configuration2.sync.ReadWriteSynchronizer;
+import org.neo4j.logging.Log;
 import org.neo4j.plugin.configuration.listners.ConfigurationLifecycleListener;
 import org.neo4j.plugin.configuration.listners.ShutdownListener;
 
@@ -30,6 +31,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 public class ConfigurationLifecycle implements AutoCloseable {
 
@@ -44,16 +46,19 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private final AtomicReference<ImmutableConfiguration> configurationReference;
     private ScheduledFuture<?> scheduledFuture;
     private final List<String> supportedEnvVarPrefixes;
+    private final Log log;
 
     public ConfigurationLifecycle(int triggerPeriodMillis,
                                   String configFileName,
-                                  boolean allowFailOnInit) {
-        this(triggerPeriodMillis, configFileName, allowFailOnInit, false, null);
+                                  boolean allowFailOnInit,
+                                  Log log) {
+        this(triggerPeriodMillis, configFileName, allowFailOnInit, log, false, null);
     }
 
     public ConfigurationLifecycle(int triggerPeriodMillis,
                                   String configFileName,
                                   boolean allowFailOnInit,
+                                  Log log,
                                   boolean loadEvnVars,
                                   String... supportedEnvVarPrefixes) {
         listenerMap = new ConcurrentHashMap<>();
@@ -63,6 +68,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
         this.triggerPeriodMillis = triggerPeriodMillis;
         this.supportedEnvVarPrefixes = supportedEnvVarPrefixes == null || supportedEnvVarPrefixes.length == 0 ?
                 Collections.emptyList() : Collections.unmodifiableList(Arrays.asList(supportedEnvVarPrefixes));
+        this.log = log;
 
         File propertiesFile = new File(configFileName);
         final FileBasedBuilderParameters params = new Parameters()
@@ -74,7 +80,6 @@ public class ConfigurationLifecycle implements AutoCloseable {
         if (loadEvnVars) {
             initEnvVars();
         }
-        addBuilderListener();
         final ReloadingController reloadingController = builder.getReloadingController();
         trigger = new PeriodicReloadingTrigger(reloadingController,
                 null, triggerPeriodMillis, TimeUnit.MILLISECONDS);
@@ -107,8 +112,18 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     private void invokeListeners(ImmutableConfiguration oldConfig, ImmutableConfiguration newConfig) {
         final EventType eventType = ConfigurationLifecycleUtils.getEventType(newConfig, oldConfig);
+        if (log.isDebugEnabled()) {
+            log.debug("Detected new event change in configuration %s", eventType.name());
+        }
         // we notify all the super types, so we retrieve the full dependency tree
         final List<EventType> evtTree = eventType.getTree();
+        if (log.isDebugEnabled()) {
+            log.debug("The event tree is [%s]", evtTree.stream()
+                    .map(Enum::name)
+                    .collect(Collectors.joining(",")));
+            log.debug("The listenerMap contains the following listeners: [%s]", listenerMap.keySet().stream()
+                    .collect(Collectors.joining(",")));
+        }
         evtTree.forEach(evt -> listenerMap.getOrDefault(evt.toString(), Collections.emptyList())
                     // for each event of the tree we sent the actual type, not the super type
                     .forEach(listener -> listener.onConfigurationChange(eventType, newConfig)));
@@ -173,6 +188,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void start() {
         synchronized (lifecycleMonitor) {
+            addBuilderListener();
             trigger.start();
             // this is a workaround because the configuration2
             // framework reloads the configuration on demand
