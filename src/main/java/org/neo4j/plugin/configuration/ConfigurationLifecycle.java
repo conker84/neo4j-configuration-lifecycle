@@ -231,13 +231,10 @@ public class ConfigurationLifecycle implements AutoCloseable {
 
     public void stop(boolean shutdown) {
         synchronized (lifecycleMonitor) {
-            if (!isRunning()) {
-                return;
+            if (isRunning()) {
+                log.info("Stopping the connector lifecycle listener with shutdown: %s", shutdown);
             }
-            log.info("Stopping the connector lifecycle listener with shutdown: %s", shutdown);
-            if (trigger != null) {
-                trigger.shutdown(shutdown);
-            }
+            trigger.shutdown(shutdown);
             if (scheduledFuture != null) {
                 scheduledFuture.cancel(false);
                 scheduledFuture = null;

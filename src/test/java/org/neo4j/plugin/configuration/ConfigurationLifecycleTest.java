@@ -258,6 +258,28 @@ public class ConfigurationLifecycleTest {
     }
 
     @Test
+    public void testOnShutdownInvocationAfterSimpleStop() throws Exception {
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_CHANGED, new ConfigurationLifecycleListener() {
+            @Override
+            public void onConfigurationChange(EventType event, ImmutableConfiguration config) {
+
+            }
+
+            @Override
+            public void onShutdown() {
+                countDownLatch.countDown();
+            }
+        });
+        configurationLifecycle.start();
+        configurationLifecycle.stop();
+        configurationLifecycle.stop(true);
+        countDownLatch.await(30, TimeUnit.SECONDS);
+        Assert.assertEquals(0, countDownLatch.getCount());
+        assertEnvVars();
+    }
+
+    @Test
     public void testUnknownFile() throws Exception {
         this.configurationLifecycle.stop(true);
         String noopFileName = FILE.getAbsolutePath().replace("test.properties", "noop.properties");
