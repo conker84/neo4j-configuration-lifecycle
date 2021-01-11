@@ -47,6 +47,7 @@ public class ConfigurationLifecycle implements AutoCloseable {
     private final ExecutorService listenerExecutorService;
 
     private final Object lifecycleMonitor = new Object();
+    private final Object listenerMonitor = new Object();
     private final AtomicReference<ImmutableConfiguration> configurationReference;
     private ScheduledFuture<?> scheduledFuture;
     private final List<String> supportedEnvVarPrefixes;
@@ -99,7 +100,8 @@ public class ConfigurationLifecycle implements AutoCloseable {
                         if (trigger.isRunning() && (isResultCreated || this.firstStart.get())) {
                             firstStart.set(false);
                             final ImmutableConfiguration newConfiguration = event.getSource().getConfiguration();
-                            invokeListeners(configurationReference.get(), newConfiguration);
+                            ImmutableConfiguration oldConfiguration = configurationReference.get();
+                            invokeListeners(oldConfiguration, newConfiguration);
                         }
                     } catch (Exception ignored) {
                         log.warn("Cannot invoke listeners because the following exception:", ignored);
@@ -122,24 +124,26 @@ public class ConfigurationLifecycle implements AutoCloseable {
     }
 
     private void invokeListeners(ImmutableConfiguration oldConfig, ImmutableConfiguration newConfig) {
-        final EventType eventType = ConfigurationLifecycleUtils.getEventType(newConfig, oldConfig);
-        if (log.isDebugEnabled()) {
-            log.debug("Detected new event change in configuration %s", eventType.name());
-        }
-        // we notify all the super types, so we retrieve the full dependency tree
-        final List<EventType> evtTree = eventType.getTree();
-        if (log.isDebugEnabled()) {
-            final Collector<CharSequence, ?, String> joining = Collectors.joining(",");
-            log.debug("The event tree is [%s]", evtTree.stream()
-                    .map(Enum::name)
-                    .collect(joining));
-            log.debug("The listenerMap contains the following listeners: [%s]", listenerMap.keySet().stream()
-                    .collect(joining));
-        }
-        evtTree.forEach(evt -> listenerMap.getOrDefault(evt.toString(), Collections.emptyList())
+        synchronized (listenerMonitor) {
+            final EventType eventType = ConfigurationLifecycleUtils.getEventType(newConfig, oldConfig);
+            if (log.isDebugEnabled()) {
+                log.debug("Detected new event change in configuration %s", eventType.name());
+            }
+            // we notify all the super types, so we retrieve the full dependency tree
+            final List<EventType> evtTree = eventType.getTree();
+            if (log.isDebugEnabled()) {
+                final Collector<CharSequence, ?, String> joining = Collectors.joining(",");
+                log.debug("The event tree is [%s]", evtTree.stream()
+                        .map(Enum::name)
+                        .collect(joining));
+                log.debug("The listenerMap contains the following listeners: [%s]", listenerMap.keySet().stream()
+                        .collect(joining));
+            }
+            evtTree.forEach(evt -> listenerMap.getOrDefault(evt.toString(), Collections.emptyList())
                     // for each event of the tree we sent the actual type, not the super type
                     .forEach(listener -> listener.onConfigurationChange(eventType, newConfig)));
-        configurationReference.set(newConfig);
+            configurationReference.set(newConfig);
+        }
     }
 
     public void setProperty(String key, Object value) throws ConfigurationException {

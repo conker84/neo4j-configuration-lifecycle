@@ -28,10 +28,10 @@ public class ConfigurationLifecycleUtils {
         }
         final Set<String> newFields = configKeys(newConfig);
         final Set<String> oldFields = configKeys(oldConfig);
-        if (newConfig.size() > oldConfig.size() && newFields.containsAll(oldFields)) {
+        if (newConfig.size() > oldConfig.size() && (oldFields.isEmpty() || newFields.containsAll(oldFields))) {
             return EventType.PROPERTY_ADDED;
         }
-        if (oldConfig.size() < newConfig.size() && oldFields.containsAll(newFields)) {
+        if (oldConfig.size() > newConfig.size() && (newFields.isEmpty() || oldFields.containsAll(newFields))) {
             return EventType.PROPERTY_REMOVED;
         }
         if (newConfig.size() == oldConfig.size() && newFields.containsAll(oldFields)) {

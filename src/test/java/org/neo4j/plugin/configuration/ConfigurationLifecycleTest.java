@@ -11,14 +11,9 @@ import org.junit.runners.MethodSorters;
 import org.neo4j.logging.NullLog;
 import org.neo4j.plugin.configuration.listners.ConfigurationLifecycleListener;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.net.URISyntaxException;
-import java.util.Collections;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -282,7 +277,7 @@ public class ConfigurationLifecycleTest {
     @Test
     public void testUnknownFile() throws Exception {
         this.configurationLifecycle.stop(true);
-        String noopFileName = FILE.getAbsolutePath().replace("test.properties", "noop.properties");
+        String noopFileName = FILE.getAbsolutePath().replace("test.properties", UUID.randomUUID().toString() + ".properties");
         this.configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, noopFileName, true, NullLog.getInstance(), true);
         CountDownLatch countDownLatch = new CountDownLatch(1);
         this.configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_INITIALIZED, (evt, conf) -> {
@@ -291,6 +286,63 @@ public class ConfigurationLifecycleTest {
         this.configurationLifecycle.start();
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
+        assertEnvVars();
+    }
+
+    @Test
+    public void testSetPropertiesAPIs() throws Exception {
+        this.configurationLifecycle.stop(true);
+        String noopFileName = FILE.getAbsolutePath().replace("test.properties", UUID.randomUUID().toString() + ".properties");
+        this.configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, noopFileName, true, NullLog.getInstance(), true);
+        AtomicInteger counterAdded = new AtomicInteger();
+        this.configurationLifecycle.addConfigurationLifecycleListener(EventType.PROPERTY_ADDED, (evt, conf) -> {
+            counterAdded.incrementAndGet();
+        });
+        this.configurationLifecycle.start();
+        Thread.sleep(2000);
+        // this will trigger the following tree
+        // "PROPERTY_ADDED" -> "CONFIGURATION_CHANGED" -> "CONFIGURATION_INITIALIZED"
+        // this means that "CONFIGURATION_INITIALIZED" will triggered twice
+        Map<String, Object> newProperties = new HashMap<>();
+        newProperties.put(String.format("my.prop.%s", UUID.randomUUID().toString()), UUID.randomUUID().toString());
+        newProperties.put(String.format("my.prop.%s", UUID.randomUUID().toString()), UUID.randomUUID().toString());
+        configurationLifecycle.setProperties(newProperties);
+        // we wait 10 seconds in order to be sure that the
+        // listener gets invoked just once
+        Thread.sleep(10000);
+        Assert.assertEquals(1, counterAdded.get());
+        // check if the file contains the new properties
+        try (FileInputStream fileInputStream = new FileInputStream(new File(noopFileName))) {
+            Properties props = new Properties();
+            props.load(fileInputStream);
+            newProperties.forEach((key, value) -> Assert.assertEquals(value, props.getProperty(key)));
+        }
+        configurationLifecycle.stop();
+        assertEnvVars();
+    }
+
+    @Test
+    public void testSetPropertiesAPIsSaveFalse() throws Exception {
+        AtomicInteger counterAdded = new AtomicInteger();
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.PROPERTY_ADDED, (evt, conf) -> {
+            counterAdded.incrementAndGet();
+        });
+        Thread.sleep(2000);
+        Map<String, Object> newProperties = new HashMap<>();
+        newProperties.put(String.format("my.prop.%s", UUID.randomUUID().toString()), UUID.randomUUID().toString());
+        newProperties.put(String.format("my.prop.%s", UUID.randomUUID().toString()), UUID.randomUUID().toString());
+        configurationLifecycle.setProperties(newProperties, false);
+        // we wait 10 seconds in order to be sure that the
+        // listener gets invoked just once
+        Thread.sleep(10000);
+        Assert.assertEquals(1, counterAdded.get());
+        // the file must not contain the new properties
+        try (FileInputStream fileInputStream = new FileInputStream(FILE)) {
+            Properties props = new Properties();
+            props.load(fileInputStream);
+            newProperties.forEach((key, value) -> Assert.assertNull(props.getProperty(key)));
+        }
+        configurationLifecycle.stop();
         assertEnvVars();
     }
 }
