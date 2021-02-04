@@ -376,9 +376,52 @@ public class ConfigurationLifecycleTest {
         // "PROPERTY_REMOVED" -> "CONFIGURATION_CHANGED" -> "CONFIGURATION_INITIALIZED"
         // this means that "CONFIGURATION_INITIALIZED" will triggered again
         configurationLifecycle.removeProperty(newKey);
+        Assert.assertFalse(configurationLifecycle.getConfiguration().containsKey(newKey));
         countDownLatch.await(30, TimeUnit.SECONDS);
         Assert.assertEquals(0, countDownLatch.getCount());
         configurationLifecycle.stop();
+        assertEnvVars();
+    }
+
+    @Test
+    public void testClearAPIsSaveFalse() throws Exception {
+        long timestamp = System.currentTimeMillis();
+        String newKey = String.format("my.prop.%d", timestamp);
+        String newValue = UUID.randomUUID().toString();
+        CountDownLatch countDownLatch = new CountDownLatch(3);
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.CONFIGURATION_INITIALIZED, (evt, conf) -> {
+            if (evt != EventType.CONFIGURATION_INITIALIZED) return; // if not the real event we skip the assert
+            countDownLatch.countDown();
+            Assert.assertNull("newKey", conf.getString(newKey));
+        });
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.PROPERTY_ADDED, (evt, conf) -> {
+            countDownLatch.countDown();
+            Assert.assertEquals(newValue, conf.getString(newKey));
+        });
+        configurationLifecycle.addConfigurationLifecycleListener(EventType.PROPERTY_REMOVED, (evt, conf) -> {
+            countDownLatch.countDown();
+            Assert.assertNull("newKey", conf.getString(newKey));
+        });
+        configurationLifecycle.start();
+        Thread.sleep(2000);
+        // this will trigger the following tree
+        // "PROPERTY_ADDED" -> "CONFIGURATION_CHANGED" -> "CONFIGURATION_INITIALIZED"
+        // this means that "CONFIGURATION_INITIALIZED" will triggered twice
+        configurationLifecycle.setProperty(newKey, newValue);
+        Thread.sleep(2000);
+        // this will trigger the following tree
+        // "PROPERTY_REMOVED" -> "CONFIGURATION_CHANGED" -> "CONFIGURATION_INITIALIZED"
+        // this means that "CONFIGURATION_INITIALIZED" will triggered again
+        configurationLifecycle.removeProperty(newKey, false);
+        Assert.assertFalse(configurationLifecycle.getConfiguration().containsKey(newKey));
+        countDownLatch.await(30, TimeUnit.SECONDS);
+        Assert.assertEquals(0, countDownLatch.getCount());
+        configurationLifecycle.stop();
+        try (FileInputStream fileInputStream = new FileInputStream(FILE)) {
+            Properties props = new Properties();
+            props.load(fileInputStream);
+            Assert.assertEquals(newValue, props.getProperty(newKey));
+        }
         assertEnvVars();
     }
 
@@ -414,6 +457,46 @@ public class ConfigurationLifecycleTest {
         Thread.sleep(10000);
         Assert.assertEquals(1, counterRemoved.get());
         configurationLifecycle.stop();
+        assertEnvVars();
+    }
+
+    @Test
+    public void testClearPropertiesAPIsSaveFalse() throws Exception {
+        this.configurationLifecycle.stop(true);
+        String noopFileName = FILE.getAbsolutePath().replace("test.properties", UUID.randomUUID().toString() + ".properties");
+        this.configurationLifecycle = new ConfigurationLifecycle(TRIGGER_PERIOD_MILLIS, noopFileName, true, NullLog.getInstance(), true);
+        AtomicInteger counterAdded = new AtomicInteger();
+        this.configurationLifecycle.addConfigurationLifecycleListener(EventType.PROPERTY_ADDED, (evt, conf) -> {
+            counterAdded.incrementAndGet();
+        });
+        AtomicInteger counterRemoved = new AtomicInteger();
+        this.configurationLifecycle.addConfigurationLifecycleListener(EventType.PROPERTY_REMOVED, (evt, conf) -> {
+            counterRemoved.incrementAndGet();
+        });
+        this.configurationLifecycle.start();
+        Thread.sleep(2000);
+        // this will trigger the following tree
+        // "PROPERTY_ADDED" -> "CONFIGURATION_CHANGED" -> "CONFIGURATION_INITIALIZED"
+        // this means that "CONFIGURATION_INITIALIZED" will triggered twice
+        Map<String, Object> newProperties = new HashMap<>();
+        newProperties.put(String.format("my.prop.%s", UUID.randomUUID().toString()), UUID.randomUUID().toString());
+        newProperties.put(String.format("my.prop.%s", UUID.randomUUID().toString()), UUID.randomUUID().toString());
+        configurationLifecycle.setProperties(newProperties);
+        // we wait 10 seconds in order to be sure that the
+        // listener gets invoked just once
+        Thread.sleep(10000);
+        Assert.assertEquals(1, counterAdded.get());
+        configurationLifecycle.removeProperties(newProperties.keySet(), false);
+        // we wait 10 seconds in order to be sure that the
+        // listener gets invoked just once
+        Thread.sleep(10000);
+        Assert.assertEquals(1, counterRemoved.get());
+        configurationLifecycle.stop();
+        try (FileInputStream fileInputStream = new FileInputStream(noopFileName)) {
+            Properties props = new Properties();
+            props.load(fileInputStream);
+            newProperties.forEach((k, v) -> Assert.assertEquals(v, props.getProperty(k)));
+        }
         assertEnvVars();
     }
 }
