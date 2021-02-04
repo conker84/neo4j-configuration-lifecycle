@@ -158,13 +158,6 @@ public class ConfigurationLifecycle implements AutoCloseable {
         checkAndSave(save);
     }
 
-    private void checkAndSave(boolean save) throws ConfigurationException {
-        if (save) {
-            log.info("Saving the configuration back to the file");
-            builder.save();
-        }
-    }
-
     public void setProperties(Map<String, Object> properties) throws ConfigurationException {
         setProperties(properties, true);
     }
@@ -173,6 +166,37 @@ public class ConfigurationLifecycle implements AutoCloseable {
         final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
         final FileBasedConfiguration configuration = builder.getConfiguration();
         properties.forEach(configuration::setProperty);
+        listenerExecutorService.submit(() -> invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration)));
+        checkAndSave(save);
+    }
+
+    private void checkAndSave(boolean save) throws ConfigurationException {
+        if (save) {
+            log.info("Saving the configuration back to the file");
+            builder.save();
+        }
+    }
+
+    public void removeProperty(String key) throws ConfigurationException {
+        removeProperty(key, true);
+    }
+
+    public void removeProperty(String key, boolean save) throws ConfigurationException {
+        final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
+        final FileBasedConfiguration configuration = builder.getConfiguration();
+        configuration.clearProperty(key);
+        listenerExecutorService.submit(() -> invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration)));
+        checkAndSave(save);
+    }
+
+    public void removeProperties(Collection<String> properties) throws ConfigurationException {
+        removeProperties(properties, true);
+    }
+
+    public void removeProperties(Collection<String> properties, boolean save) throws ConfigurationException {
+        final ImmutableConfiguration oldConfig = ConfigurationUtils.cloneConfiguration(builder.getConfiguration());
+        final FileBasedConfiguration configuration = builder.getConfiguration();
+        properties.forEach(configuration::clearProperty);
         listenerExecutorService.submit(() -> invokeListeners(oldConfig, ConfigurationUtils.unmodifiableConfiguration(configuration)));
         checkAndSave(save);
     }
