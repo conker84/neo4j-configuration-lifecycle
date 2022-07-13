@@ -6,7 +6,7 @@
 
   <groupId>org.example</groupId>
   <artifactId>neo4j-configuration-lifecyle</artifactId>
-  <version>1.1</version>
+  <version>1.1.0</version>
 
   <name>neo4j-configuration-lifecyle</name>
   <!-- FIXME change it to the project's website -->
